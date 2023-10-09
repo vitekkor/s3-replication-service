@@ -20,6 +20,8 @@ kotlin {
     jvmToolchain(21)
 }
 
+val jjwtVersion = "0.12.2"
+
 dependencies {
     // spring
     implementation("org.springframework.boot:spring-boot-starter-actuator")
@@ -34,6 +36,11 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
+    implementation("io.github.microutils:kotlin-logging-jvm:3.0.5")
+
+    // jwt
+    implementation("io.jsonwebtoken:jjwt-api:${jjwtVersion}")
+    runtimeOnly("io.jsonwebtoken:jjwt-impl:${jjwtVersion}")
 
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
 
