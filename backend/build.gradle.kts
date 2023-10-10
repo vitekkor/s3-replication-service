@@ -6,6 +6,7 @@ plugins {
     kotlin("jvm") version "1.9.20-Beta2"
     kotlin("plugin.spring") version "1.9.20-Beta2"
     kotlin("plugin.serialization") version "1.9.20-Beta2"
+    id("org.ajoberstar.grgit") version "4.1.1"
 }
 
 java {
@@ -61,4 +62,20 @@ tasks.withType<KotlinCompile> {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+tasks.processResources {
+    filesMatching("**/version.json") {
+        filter(
+            org.apache.tools.ant.filters.ReplaceTokens::class,
+            "tokens" to mapOf(
+                "branch.name" to grgit.branch.current().name,
+                "build.number" to (project.properties["build.number"] ?: "@build.number@"),
+                "build.date" to (project.properties["buildTimestamp"] ?: "@build.date@"),
+                "git.commit.id" to grgit.head().id,
+                "project.artifactId" to project.name,
+                "project.version" to project.version.toString(),
+            )
+        )
+    }
 }

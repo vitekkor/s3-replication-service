@@ -1,0 +1,10 @@
+{
+    "buildBranch":"@branch.name@",
+    "buildNumber":"@build.number@",
+    "buildDate":"@build.date@",
+
+    "buildChangeSet":"@git.commit.id@",
+
+    "projectArtifactId":"@project.artifactId@",
+    "projectVersion":"@project.version@"
+}
