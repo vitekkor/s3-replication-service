@@ -43,6 +43,14 @@ dependencies {
     implementation("io.jsonwebtoken:jjwt-api:${jjwtVersion}")
     runtimeOnly("io.jsonwebtoken:jjwt-impl:${jjwtVersion}")
 
+    // security
+    implementation("org.bouncycastle:bcpkix-lts8on:2.73.3")
+
+    // s3
+    implementation("software.amazon.awssdk:s3:2.20.162")
+    implementation("software.amazon.awssdk:netty-nio-client:2.20.162")
+
+
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")

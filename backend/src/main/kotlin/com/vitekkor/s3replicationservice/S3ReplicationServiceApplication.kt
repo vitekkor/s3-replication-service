@@ -11,5 +11,6 @@ import org.springframework.boot.runApplication
 class S3ReplicationServiceApplication
 
 fun main(args: Array<String>) {
+    // System.setProperty("spring.profiles.active", "dev")
     runApplication<S3ReplicationServiceApplication>(*args)
 }
