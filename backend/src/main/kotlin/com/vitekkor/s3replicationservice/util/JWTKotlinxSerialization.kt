@@ -1,5 +1,6 @@
 package com.vitekkor.s3replicationservice.util
 
+import io.jsonwebtoken.io.AbstractDeserializer
 import io.jsonwebtoken.io.AbstractSerializer
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
@@ -11,14 +12,9 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.encodeToStream
 import java.io.OutputStream
+import java.io.Reader
 
-object JWTKotlinxSerializer : AbstractSerializer<Map<String, *>>(), KSerializer<Any?> {
-    @Suppress("UNCHECKED_CAST")
-    @OptIn(ExperimentalSerializationApi::class)
-    override fun doSerialize(t: Map<String, *>, out: OutputStream) {
-        Json.encodeToStream(t as Map<String, @Serializable(with = JWTKotlinxSerializer::class) Any>, out)
-    }
-
+object AnySerializer : KSerializer<Any?> {
     private fun Any?.toJsonPrimitive(): JsonPrimitive {
         return when (this) {
             null -> JsonNull
@@ -71,5 +67,22 @@ object JWTKotlinxSerializer : AbstractSerializer<Map<String, *>>(), KSerializer<
         return jsonPrimitive.toAnyValue()
     }
 
+}
 
+object JWTKotlinxSerializer : AbstractSerializer<Map<String, *>>() {
+    @Suppress("UNCHECKED_CAST")
+    @OptIn(ExperimentalSerializationApi::class)
+    override fun doSerialize(t: Map<String, *>, out: OutputStream) {
+        Json.encodeToStream(t as Map<String, @Serializable(with = AnySerializer::class) Any>, out)
+    }
+
+
+}
+
+object JWTKotlinxDeserializer : AbstractDeserializer<Map<String, *>>() {
+    override fun doDeserialize(reader: Reader): Map<String, *> {
+        return Json.decodeFromString<Map<String, @Serializable(with = AnySerializer::class) Any>>(
+            reader.readText()
+        )
+    }
 }

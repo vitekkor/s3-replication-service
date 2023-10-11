@@ -1,9 +1,9 @@
 package com.vitekkor.s3replicationservice.security
 
 import com.vitekkor.s3replicationservice.configuration.properties.JwtProperties
+import com.vitekkor.s3replicationservice.util.JWTKotlinxDeserializer
 import com.vitekkor.s3replicationservice.util.JWTKotlinxSerializer
 import io.jsonwebtoken.Claims
-import io.jsonwebtoken.Jws
 import io.jsonwebtoken.JwtException
 import io.jsonwebtoken.Jwts
 import io.jsonwebtoken.Jwts.SIG
@@ -35,23 +35,26 @@ class JwtTokenProvider(private val jwtProperties: JwtProperties) {
     fun createToken(authentication: Authentication): String {
         val username: String = authentication.name
         val authorities: Collection<GrantedAuthority> = authentication.authorities
-        val claims = Jwts.claims().subject(username).build()
+        val claims = Jwts.claims().subject(username)
         if (authorities.isNotEmpty()) {
-            claims[AUTHORITIES_KEY] =
+            claims.add(
+                AUTHORITIES_KEY,
                 authorities.joinToString(separator = ",", transform = GrantedAuthority::getAuthority)
+            )
         }
         val now = Date()
         val validity = Date(now.time + jwtProperties.validityInMs)
         return Jwts.builder()
             .json(JWTKotlinxSerializer)
-            .claims(claims).issuedAt(now)
+            .claims(claims.build()).issuedAt(now)
             .expiration(validity)
             .signWith(secretKey, SIG.HS256)
             .compact()
     }
 
     fun getAuthentication(token: String): Authentication {
-        val claims: Claims = Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token).payload
+        val claims: Claims =
+            Jwts.parser().json(JWTKotlinxDeserializer).verifyWith(secretKey).build().parseSignedClaims(token).payload
         val authoritiesClaim = claims[AUTHORITIES_KEY]
         val authorities: Collection<GrantedAuthority> =
             if (authoritiesClaim == null) AuthorityUtils.NO_AUTHORITIES else AuthorityUtils
@@ -62,17 +65,14 @@ class JwtTokenProvider(private val jwtProperties: JwtProperties) {
 
     fun validateToken(token: String): Boolean {
         try {
-            val claims: Jws<Claims> = Jwts.parser().verifyWith(secretKey)
+            Jwts.parser().verifyWith(secretKey)
+                .json(JWTKotlinxDeserializer)
                 .build().parseSignedClaims(token)
-            // parseClaimsJws will check expiration date. No need do here.
-            log.info("expiration date: {}", claims.payload.expiration)
             return true
         } catch (e: JwtException) {
-            log.info("Invalid JWT token: {}", e.message)
-            log.trace("Invalid JWT token trace.", e)
+            log.trace("Invalid JWT token", e)
         } catch (e: IllegalArgumentException) {
-            log.info("Invalid JWT token: {}", e.message)
-            log.trace("Invalid JWT token trace.", e)
+            log.trace("Invalid JWT token", e)
         }
         return false
     }
