@@ -1,10 +1,44 @@
-CREATE KEYSPACE IF NOT EXISTS "s3_replication" WITH replication = {'class' : 'SimpleStrategy', 'replication_factor' : 1};
+create keyspace "s3_replication" with replication = {'class' : 'SimpleStrategy', 'replication_factor' : 1};
 
-CREATE TABLE IF NOT EXISTS s3_replication.user
+create table if not exists s3_replication.user
 (
     login    text primary key,
     password text,
     roles    set<text>,
     isActive boolean,
     claims   set<text>,
-)
+);
+
+create table if not exists s3_replication.request_log
+(
+    id             uuid primary key,
+    method         text,
+    fileName       text,
+    fileProperties map<text, text>,
+    s3StorageName  text,
+    timestamp      timestamp,
+);
+
+create index if not exists request_log_timestamp_index on s3_replication.request_log (timestamp);
+create index if not exists request_log_filename_index on s3_replication.request_log (fileName);
+
+create table if not exists s3_replication.request_error
+(
+    id             uuid primary key,
+    method         text,
+    fileName       text,
+    fileProperties map<text, text>,
+    s3StorageName  text,
+    timestamp      timestamp,
+);
+
+create index if not exists request_error_timestamp_index on s3_replication.request_error (timestamp);
+create index if not exists request_error_filename_index on s3_replication.request_error (fileName);
+
+create table if not exists s3_replication.replication_lock
+(
+    name      text primary key,
+    lockUntil timestamp,
+    lockedAt  timestamp,
+    lockedBy  text
+);

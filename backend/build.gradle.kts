@@ -36,6 +36,7 @@ dependencies {
     implementation("io.projectreactor.kotlin:reactor-kotlin-extensions")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor")
+    implementation("io.projectreactor.addons:reactor-extra:3.5.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
     implementation("io.github.microutils:kotlin-logging-jvm:3.0.5")
 
@@ -49,6 +50,11 @@ dependencies {
     // s3
     implementation("software.amazon.awssdk:s3:2.20.162")
     implementation("software.amazon.awssdk:netty-nio-client:2.20.162")
+
+    // shedlock
+    implementation("net.javacrumbs.shedlock:shedlock-spring:5.8.0")
+    implementation("net.javacrumbs.shedlock:shedlock-provider-cassandra:5.8.0")
+
 
 
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")

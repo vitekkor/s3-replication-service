@@ -1,13 +1,15 @@
 package com.vitekkor.s3replicationservice.service
 
+import com.vitekkor.s3replicationservice.model.OperationResult
+import com.vitekkor.s3replicationservice.model.Result
 import com.vitekkor.s3replicationservice.model.UploadStatus
 import com.vitekkor.s3replicationservice.util.FileUtils
+import com.vitekkor.s3replicationservice.util.contentType
 import mu.KotlinLogging.logger
 import org.springframework.http.MediaType
 import org.springframework.http.codec.multipart.FilePart
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
-import software.amazon.awssdk.core.BytesWrapper
 import software.amazon.awssdk.core.async.AsyncRequestBody
 import software.amazon.awssdk.core.async.AsyncResponseTransformer
 import software.amazon.awssdk.services.s3.S3AsyncClient
@@ -27,6 +29,7 @@ import java.nio.ByteBuffer
 class ReplicableS3Client(
     private val s3AsyncClient: S3AsyncClient,
     private val bucket: String,
+    val name: String,
 ) {
     private val logger = logger {}
     fun getObjects(): Flux<S3Object> {
@@ -39,37 +42,84 @@ class ReplicableS3Client(
         ).flatMap { response -> Flux.fromIterable(response.contents()) }
     }
 
-    fun deleteObject(objectKey: String): Mono<Void> {
+    fun deleteObject(objectKey: String): Mono<OperationResult> {
         return Mono.just(
             DeleteObjectRequest.builder().bucket(bucket).key(objectKey).build()
         ).map(s3AsyncClient::deleteObject)
-            .flatMap { Mono.fromFuture(it) }
-            .then()
+            .flatMap { Mono.fromFuture(it) }.flatMap { response ->
+                FileUtils.checkSdkResponse(response)
+                logger.info("upload result: {}", response.toString())
+                Mono.just(OperationResult(objectKey, Result.SUCCESSFUL))
+            }
     }
 
 
-    fun getByteObject(key: String): Mono<ByteArray> {
-        return Mono.just(GetObjectRequest.builder().bucket(bucket).key(key).build())
-            .map { it -> s3AsyncClient.getObject(it, AsyncResponseTransformer.toBytes()) }
-            .flatMap { Mono.fromFuture(it) }
-            .map(BytesWrapper::asByteArray)
+    fun getByteBufferFluxObject(key: String): Flux<ByteBuffer> {
+        return Mono.just(GetObjectRequest.builder().bucket(bucket).key(key).build()).map {
+            s3AsyncClient.getObject(it, AsyncResponseTransformer.toPublisher())
+        }.flatMap { Mono.fromFuture(it) }.flatMapMany { Flux.from(it) }
     }
 
-
-    fun uploadObject(filePart: FilePart): Mono<Unit> {
-        val filename: String = filePart.filename().removePrefix("/")
-        val metadata: Map<String, String> = mapOf("filename" to filename)
-        // get media type
-        val mediaType: MediaType = filePart.headers().contentType ?: MediaType.APPLICATION_OCTET_STREAM
+    fun uploadObjectFlux(file: Flux<ByteBuffer>, fileName: String, contentType: String): Mono<Unit> {
+        val metadata: Map<String, String> = mapOf("filename" to fileName)
+        val mediaType: MediaType = MediaType.valueOf(contentType)
         val s3AsyncClientMultipartUpload = s3AsyncClient.createMultipartUpload(
             CreateMultipartUploadRequest.builder()
                 .contentType(mediaType.toString())
-                .key(filename)
+                .key(fileName)
                 .metadata(metadata)
                 .bucket(bucket)
                 .build()
         )
-        val uploadStatus = UploadStatus(requireNotNull(filePart.headers().contentType).toString(), filename)
+        val uploadStatus = UploadStatus(contentType, fileName)
+        return Mono.fromFuture(s3AsyncClientMultipartUpload).flatMapMany { response ->
+            FileUtils.checkSdkResponse(response)
+            uploadStatus.uploadId = response.uploadId()
+            logger.info("Upload object with ID={}", response.uploadId())
+            file
+        }.bufferUntil { byteBuffer ->
+            // Collect incoming values into multiple List buffers that will be emitted by the resulting Flux each time the given predicate returns true.
+            uploadStatus.addBuffered(byteBuffer.remaining())
+            if (uploadStatus.buffered >= 5242880) { // 5mb TODO config
+                logger.info(
+                    "BufferUntil - returning true, bufferedBytes={}, partCounter={}, uploadId={}",
+                    uploadStatus.buffered, uploadStatus.partCounter, uploadStatus.uploadId
+                )
+
+                // reset buffer
+                uploadStatus.buffered = 0
+                return@bufferUntil true
+            }
+            false
+        }.map { FileUtils.byteBufferListToByteBuffer(it) } // upload part
+            .flatMap { byteBuffer -> uploadPartObject(uploadStatus, byteBuffer) }
+            .onBackpressureBuffer()
+            .reduce(uploadStatus) { status, completedPart ->
+                logger.info("Completed: PartNumber={}, etag={}", completedPart.partNumber(), completedPart.eTag())
+                status.completedParts[completedPart.partNumber()] = completedPart
+                status
+            }.flatMap { uploadStatus1 -> completeMultipartUpload(uploadStatus) }.map { response ->
+                FileUtils.checkSdkResponse(response)
+                logger.info("upload result: {}", response.toString())
+            }
+    }
+
+
+    fun uploadObject(filePart: FilePart, fileName: String): Mono<Unit> {
+        val metadata: Map<String, String> = mapOf("filename" to fileName)
+        // get media type
+        val mediaType: MediaType = filePart.contentType
+        val s3AsyncClientMultipartUpload = s3AsyncClient.createMultipartUpload(
+            CreateMultipartUploadRequest.builder()
+                .contentType(mediaType.toString())
+                .key(fileName)
+                .metadata(metadata)
+                .bucket(bucket)
+                .build()
+        )
+        val uploadStatus = UploadStatus(filePart.contentType.toString(), fileName)
+
+
         return Mono.fromFuture(s3AsyncClientMultipartUpload).flatMapMany { response ->
             FileUtils.checkSdkResponse(response)
             uploadStatus.uploadId = response.uploadId()
@@ -78,7 +128,7 @@ class ReplicableS3Client(
         }.bufferUntil { dataBuffer ->
             // Collect incoming values into multiple List buffers that will be emitted by the resulting Flux each time the given predicate returns true.
             uploadStatus.addBuffered(dataBuffer.readableByteCount())
-            if (uploadStatus.buffered >= 5242880) { // 5mb
+            if (uploadStatus.buffered >= 5242880) { // 5mb TODO config
                 logger.info(
                     "BufferUntil - returning true, bufferedBytes={}, partCounter={}, uploadId={}",
                     uploadStatus.buffered, uploadStatus.partCounter, uploadStatus.uploadId
@@ -96,12 +146,9 @@ class ReplicableS3Client(
                 logger.info("Completed: PartNumber={}, etag={}", completedPart.partNumber(), completedPart.eTag())
                 status.completedParts[completedPart.partNumber()] = completedPart
                 status
-            }.flatMap { uploadStatus1 -> completeMultipartUpload(uploadStatus) }
-            .map { response ->
+            }.flatMap { uploadStatus1 -> completeMultipartUpload(uploadStatus) }.map { response ->
                 FileUtils.checkSdkResponse(response)
                 logger.info("upload result: {}", response.toString())
-            }.doOnError {
-                println(it)
             }
     }
 
@@ -156,4 +203,6 @@ class ReplicableS3Client(
             )
         )
     }
+
+    override fun toString(): String = name
 }
