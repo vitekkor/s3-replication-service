@@ -16,14 +16,13 @@ import software.amazon.awssdk.http.async.SdkAsyncHttpClient
 import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3AsyncClient
-import software.amazon.awssdk.services.s3.S3Client
 import java.net.URI
 import java.time.Duration
 
 
 @Configuration
 @EnableWebFlux
-class ApplicationConfiguration: WebFluxConfigurer {
+class ApplicationConfiguration : WebFluxConfigurer {
     @Bean
     fun s3Clients(s3Properties: S3Properties): List<ReplicableS3Client> {
         require(s3Properties.buckets.isNotEmpty()) { "Require at least one s3 bucket" }
@@ -32,15 +31,10 @@ class ApplicationConfiguration: WebFluxConfigurer {
             val secretKey = properties.secretKey
             val client = S3AsyncClient.builder().credentialsProvider {
                 AwsBasicCredentials.create(accessKey, secretKey)
-            }.asyncConfiguration {
-                // it.advancedOption() todo may be use coroutine dispatcher
             }.region(Region.of(properties.region))
                 .httpClient(sdkAsyncHttpClient())
                 .endpointOverride(URI.create(properties.host)).build()
-            val syncClient = S3Client.builder().credentialsProvider {
-                AwsBasicCredentials.create(accessKey, secretKey)
-            }.region(Region.of(properties.region)).endpointOverride(URI.create(properties.host)).build()
-            ReplicableS3Client(client, syncClient, properties.bucket, "replica_${properties.host}_${properties.bucket}")
+            ReplicableS3Client(client, properties.bucket, "replica_${properties.host}_${properties.bucket}")
         }
     }
 

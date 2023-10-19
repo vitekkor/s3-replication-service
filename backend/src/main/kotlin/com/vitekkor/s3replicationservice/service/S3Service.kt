@@ -7,12 +7,11 @@ import com.vitekkor.s3replicationservice.model.db.RequestLog
 import com.vitekkor.s3replicationservice.model.db.RequestMethod
 import com.vitekkor.s3replicationservice.repository.RequestErrorRepository
 import com.vitekkor.s3replicationservice.repository.RequestLogRepository
-import com.vitekkor.s3replicationservice.util.contentType
 import mu.KotlinLogging.logger
 import net.javacrumbs.shedlock.core.LockAssert
 import net.javacrumbs.shedlock.spring.annotation.EnableSchedulerLock
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
-import org.springframework.http.codec.multipart.FilePart
+import org.springframework.http.MediaType
 import org.springframework.scheduling.annotation.EnableScheduling
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
@@ -34,30 +33,43 @@ class S3Service(
     private val requestLogRepository: RequestLogRepository,
 ) {
     private val logger = logger {}
-    fun upsert(filePart: FilePart, fileName: String, timestamp: Date): Flux<OperationResult> {
-        return s3Clients.map { s3Client ->
-            s3Client.uploadObject(filePart, fileName).flatMap {
-                val requestLog = RequestLog(
-                    method = RequestMethod.PUT,
-                    fileName = fileName,
-                    fileProperties = mapOf(CONTENT_TYPE_PROPERTY to filePart.contentType.toString()),
-                    s3StorageName = s3Client.name,
-                    timestamp = timestamp
-                )
-                requestLogRepository.save(requestLog).thenReturn(it)
-            }.map { OperationResult(fileName, Result.SUCCESSFUL) }
-                .onErrorResume {
-                    logger.warn { "Uploading file $fileName to $s3Client was failed" }
+
+    fun newUpsert(
+        body: Flux<ByteBuffer>,
+        fileName: String,
+        contentType: String,
+        length: Long,
+        timestamp: Date,
+    ): Flux<OperationResult> {
+        return Flux.fromIterable(s3Clients).flatMap {
+            it.uploadObject(body, fileName, MediaType.APPLICATION_OCTET_STREAM.toString(), length).flatMap { result ->
+                if (result.isSuccessful) {
+                    val requestLog = RequestLog(
+                        method = RequestMethod.PUT,
+                        fileName = fileName,
+                        fileProperties = mapOf(
+                            CONTENT_TYPE_PROPERTY to contentType,
+                            CONTENT_LENGTH_PROPERTY to length.toString()
+                        ),
+                        s3StorageName = it.name,
+                        timestamp = timestamp
+                    )
+                    requestLogRepository.save(requestLog).thenReturn(result)
+                } else {
                     val requestError = RequestError(
                         method = RequestMethod.PUT,
                         fileName = fileName,
-                        fileProperties = mapOf(CONTENT_TYPE_PROPERTY to filePart.contentType.toString()),
-                        s3StorageName = s3Client.name,
+                        fileProperties = mapOf(
+                            CONTENT_TYPE_PROPERTY to contentType,
+                            CONTENT_LENGTH_PROPERTY to length.toString()
+                        ),
+                        s3StorageName = it.name,
                         timestamp = timestamp
                     )
-                    requestErrorRepository.save(requestError).map { OperationResult(fileName, Result.FAILED) }
+                    requestErrorRepository.save(requestError).thenReturn(result)
                 }
-        }.toFlux().flatMap { it }
+            }
+        }
     }
 
     fun delete(fileName: String, timestamp: Date): Flux<OperationResult> {
@@ -200,5 +212,6 @@ class S3Service(
 
     companion object {
         private const val CONTENT_TYPE_PROPERTY = "contentType"
+        private const val CONTENT_LENGTH_PROPERTY = "contentLength"
     }
 }

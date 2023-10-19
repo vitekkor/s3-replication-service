@@ -35,6 +35,8 @@ class UserController(
             userRepository.save(userDto.toUser(checkNotNull(userDto.password).let(passwordEncoder::encode)))
         }.onErrorMap(IllegalStateException::class.java) {
             UserCreationError(400, "Invalid password")
+        }.doOnError {
+            println()
         }
     }
 

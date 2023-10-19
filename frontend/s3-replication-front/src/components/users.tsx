@@ -27,22 +27,22 @@ const Modal = ({onRequestClose, user, createNew}) => {
         {value: "read", label: "READ"},
         {value: "write", label: "WRITE"}
     ];
-    let userScopes = Array.from(user.scopes).map(scope => allowedScopes.find(allowedScope => allowedScope.value === scope)!)
+    let userScopes = Array.from(user?.scopes || []).map(scope => allowedScopes.find(allowedScope => allowedScope.value === scope)!)
     const [scopes, setScopes] = useState<Array<{ value: string, label: string }>>(userScopes);
 
     const allowedRoles = [
         {value: "ADMIN", label: "ADMIN"},
         {value: "USER", label: "USER"}
     ];
-    let userRoles = Array.from(user.roles).map(role => allowedRoles.find(allowedRole => allowedRole.value === role)!)
+    let userRoles = Array.from(user?.roles || []).map(role => allowedRoles.find(allowedRole => allowedRole.value === role)!)
     const [roles, setRoles] = useState<Array<{ value: string, label: string }>>(userRoles);
 
-    let userFiles: Array<{ value: string, label: string }> = Array.from(user.files).map(file => {
+    let userFiles: Array<{ value: string, label: string }> = Array.from(user?.files || []).map(file => {
         return {value: file, label: file} as { value: string, label: string }
     })
     const [files, setFiles] = useState<Array<{ value: string, label: string }>>(userFiles);
 
-    let userIps: Array<{ value: string, label: string }> = Array.from(user.ips).map(ip => {
+    let userIps: Array<{ value: string, label: string }> = Array.from(user?.ips || []).map(ip => {
         return {value: ip, label: ip} as { value: string, label: string }
     })
     const [ips, setIps] = useState<Array<{ value: string, label: string }>>(userIps);
@@ -52,13 +52,13 @@ const Modal = ({onRequestClose, user, createNew}) => {
         {value: false, label: "Disabled"}
     ]
 
-    let userStatus = user.isActive ? "Active" : "Disabled"
+    let userStatus = user?.isActive ? "Active" : "Disabled"
 
-    const [status, setStatus] = useState<{ value: boolean, label: string }>({value: user.isActive, label: userStatus})
+    const [status, setStatus] = useState<{ value: boolean, label: string }>({value: user?.isActive, label: userStatus})
 
     const escFunction = useCallback((event: KeyboardEvent) => {
         if (event.key === "Escape") {
-            onRequestClose()
+            onRequestClose(user || null)
         }
     }, [onRequestClose]);
 
@@ -100,7 +100,7 @@ const Modal = ({onRequestClose, user, createNew}) => {
             files = files.map(file => file.value);
             ips = ips.map(ip => ip.value);
             isActive = status.value;
-            login = user.login;
+            login = (createNew === true) ? newLogin : user?.login;
             password = (createNew === true) ? newPassword : null;
             roles = roles.map(role => role.value);
             scopes = scopes.map(scope => scope.value);
@@ -147,7 +147,7 @@ const Modal = ({onRequestClose, user, createNew}) => {
     return (
         <div className="modal__backdrop">
             <div className="modal__container">
-                <h3 className="modal__title">Edit user {user.login}</h3>
+                <h3 className="modal__title">Edit user {user?.login}</h3>
                 <div>
                     <h4>User</h4>
                     <div>
@@ -164,7 +164,7 @@ const Modal = ({onRequestClose, user, createNew}) => {
                                     onChange={onChangeLogin}
                                 />
                             </div>
-                        ) : (user.login)}
+                        ) : (user?.login)}
                     </div>
                     <div>
                         <label>
@@ -221,7 +221,7 @@ const Modal = ({onRequestClose, user, createNew}) => {
                             value={files}
                             isMulti
                         />
-                        {user.files.join(", ")}
+                        {user?.files.join(", ")}
                     </div>
                     <div>
                         <label>
@@ -287,7 +287,7 @@ const BoardUser: React.FC = () => {
     };
 
     const findByLogin = () => {
-        setContent(allUsers.filter((user) => user.login.startsWith(searchLogin)))
+        setContent(allUsers.filter((user) => user?.login.startsWith(searchLogin)))
         setCurrentUser(null)
         setCurrentIndex(-1)
     };
@@ -329,23 +329,40 @@ const BoardUser: React.FC = () => {
     }, [escFunction]);
 
     const toggleModal = () => {
+        if (isModalOpen) {
+            document.addEventListener("keydown", escFunction, false);
+        } else {
+            document.removeEventListener("keydown", escFunction, false);
+        }
         setModalIsOpen(!isModalOpen);
     };
 
     const addUser = () => {
         setCreateUserModalOpen(!isCreateUserModalOpen);
+        userService.getUsers().then(
+            (response) => {
+                setAllUsers(response.data);
+                setContent(response.data);
+            },
+            (error) => {
+                const _content = error?.response?.data?.message || error.message || error.toString();
+                setContent(_content);
+            }
+        );
     };
 
     const onCloseModal = (newUser: User) => {
-        setCurrentUser(newUser);
-        allUsers[currentIndex] = newUser;
+        if (newUser != null) {
+            setCurrentUser(newUser);
+            allUsers[currentIndex] = newUser;
+        }
         toggleModal()
     };
 
     return (
         <div className="list row">
             {isModalOpen && <Modal onRequestClose={onCloseModal} user={currentUser} createNew={false}/>}
-            {isCreateUserModalOpen && <Modal onRequestClose={onCloseModal} user={getNewUser()} createNew={true}/>}
+            {isCreateUserModalOpen && <Modal onRequestClose={addUser} user={getNewUser()} createNew={true}/>}
             <div className="col-md-8">
                 <div className="input-group mb-3">
                     <input
@@ -383,7 +400,7 @@ const BoardUser: React.FC = () => {
                             onClick={() => setActiveUser(user, index)}
                             key={index}
                         >
-                            {user.login}
+                            {user?.login}
                         </li>
                     ))}
                 </ul>

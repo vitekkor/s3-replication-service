@@ -4,24 +4,20 @@ import com.vitekkor.s3replicationservice.model.OperationResult
 import com.vitekkor.s3replicationservice.model.Result
 import com.vitekkor.s3replicationservice.model.UploadStatus
 import com.vitekkor.s3replicationservice.util.FileUtils
-import com.vitekkor.s3replicationservice.util.contentType
-import kotlinx.coroutines.channels.BufferOverflow
 import mu.KotlinLogging.logger
 import org.springframework.http.MediaType
-import org.springframework.http.codec.multipart.FilePart
 import reactor.core.publisher.BufferOverflowStrategy
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
+import reactor.kotlin.core.publisher.toMono
 import software.amazon.awssdk.core.async.AsyncRequestBody
 import software.amazon.awssdk.core.async.AsyncResponseTransformer
 import software.amazon.awssdk.services.s3.S3AsyncClient
-import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadResponse
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload
 import software.amazon.awssdk.services.s3.model.CompletedPart
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest
-import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request
@@ -29,13 +25,11 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.model.S3Object
 import software.amazon.awssdk.services.s3.model.UploadPartRequest
 import java.nio.ByteBuffer
-import java.util.concurrent.CompletableFuture
 
 
 class ReplicableS3Client(
-    val s3AsyncClient: S3AsyncClient,
-    val s3SyncClient: S3Client,
-    val bucket: String,
+    private val s3AsyncClient: S3AsyncClient,
+    private val bucket: String,
     val name: String,
 ) {
     private val logger = logger {}
@@ -65,6 +59,34 @@ class ReplicableS3Client(
         return Mono.just(GetObjectRequest.builder().bucket(bucket).key(key).build()).map {
             s3AsyncClient.getObject(it, AsyncResponseTransformer.toPublisher())
         }.flatMap { Mono.fromFuture(it) }.flatMapMany { Flux.from(it) }
+    }
+
+    fun uploadObject(
+        file: Flux<ByteBuffer>,
+        fileName: String,
+        contentType: String,
+        length: Long,
+    ): Mono<OperationResult> {
+        val metadata: Map<String, String> = HashMap()
+        return Mono.fromFuture(
+            s3AsyncClient.putObject(
+                PutObjectRequest.builder()
+                    .bucket(bucket)
+                    .contentLength(length)
+                    .key(fileName)
+                    .contentType(contentType)
+                    .metadata(metadata)
+                    .build(),
+                AsyncRequestBody.fromPublisher(file)
+            )
+        ).map { response ->
+            FileUtils.checkSdkResponse(response)
+            logger.info("upload result: {}", response.toString())
+            OperationResult(fileName, Result.SUCCESSFUL)
+        }.onErrorResume {
+            logger.warn { "Uploading file $fileName to $name was failed" }
+            OperationResult(fileName, Result.FAILED).toMono()
+        }
     }
 
     fun uploadObjectFlux(file: Flux<ByteBuffer>, fileName: String, contentType: String): Mono<Unit> {
@@ -99,117 +121,6 @@ class ReplicableS3Client(
             }
             false
         }.map { FileUtils.byteBufferListToByteBuffer(it) } // upload part
-            .flatMap { byteBuffer -> uploadPartObject(uploadStatus, byteBuffer) }
-            .onBackpressureBuffer(5242880, BufferOverflowStrategy.DROP_OLDEST)
-            .reduce(uploadStatus) { status, completedPart ->
-                logger.info("Completed: PartNumber={}, etag={}", completedPart.partNumber(), completedPart.eTag())
-                status.completedParts[completedPart.partNumber()] = completedPart
-                status
-            }.flatMap { uploadStatus1 -> completeMultipartUpload(uploadStatus) }.map { response ->
-                FileUtils.checkSdkResponse(response)
-                logger.info("upload result: {}", response.toString())
-            }
-    }
-
-    fun createMultipartUpload(
-        filePart: FilePart,
-        fileName: String,
-    ): Pair<CompletableFuture<CreateMultipartUploadResponse>, UploadStatus> {
-        val metadata: Map<String, String> = mapOf("filename" to fileName)
-        // get media type
-        val mediaType: MediaType = filePart.contentType
-        val s3AsyncClientMultipartUpload = s3AsyncClient.createMultipartUpload(
-            CreateMultipartUploadRequest.builder()
-                .contentType(mediaType.toString())
-                .key(fileName)
-                .metadata(metadata)
-                .bucket(bucket)
-                .build()
-        )
-        val uploadStatus = UploadStatus(filePart.contentType.toString(), fileName)
-        return s3AsyncClientMultipartUpload to uploadStatus
-    }
-
-    fun createMultipartUpload2(
-        mediaType: MediaType,
-        fileName: String,
-    ): Pair<CompletableFuture<CreateMultipartUploadResponse>, UploadStatus> {
-        val metadata: Map<String, String> = mapOf("filename" to fileName)
-        val mediaTypeString = mediaType.type + "/" + mediaType.subtype
-        // get media type
-        val s3AsyncClientMultipartUpload = s3AsyncClient.createMultipartUpload(
-            CreateMultipartUploadRequest.builder()
-                .contentType(mediaTypeString)
-                .key(fileName)
-                .metadata(metadata)
-                .bucket(bucket)
-                .build()
-        )
-        val uploadStatus = UploadStatus(mediaTypeString, fileName)
-        return s3AsyncClientMultipartUpload to uploadStatus
-    }
-
-    fun uploadObject2(file: Flux<ByteBuffer>, contentType: MediaType, fileName: String, length: Long): Mono<Unit> {
-        val (s3AsyncClientMultipartUpload, uploadStatus)
-            = createMultipartUpload2(contentType, fileName)
-//        return Mono.fromFuture(s3AsyncClient
-//            .putObject(
-//                PutObjectRequest.builder()
-//                    .bucket(bucket)
-//                    .contentLength(length)
-//                    .key(fileName)
-//                    .contentType(contentType.type + "/" + contentType.subtype)
-//                    .build(),
-//                AsyncRequestBody.fromPublisher(file)
-//            )).map { response ->
-//            FileUtils.checkSdkResponse(response)
-//            logger.info("upload result: {}", response.toString())
-//        }
-
-        return Mono.fromFuture(s3AsyncClientMultipartUpload).map { response ->
-            FileUtils.checkSdkResponse(response)
-            uploadStatus.uploadId = response.uploadId()
-            logger.info("Upload object with ID={}", response.uploadId())
-            response
-        }.thenMany(file)
-            .flatMap { byteBuffer -> uploadPartObject(uploadStatus, byteBuffer) }
-            .onBackpressureBuffer()
-            .reduce(uploadStatus) { status, completedPart ->
-                logger.info("Completed: PartNumber={}, etag={}", completedPart.partNumber(), completedPart.eTag())
-                status.completedParts[completedPart.partNumber()] = completedPart
-                status
-            }.flatMap { state -> completeMultipartUpload(state) }.map { response ->
-                FileUtils.checkSdkResponse(response)
-                logger.info("upload result: {}", response.toString())
-            }
-    }
-
-
-    fun uploadObject(filePart: FilePart, fileName: String): Mono<Unit> {
-        val (s3AsyncClientMultipartUpload, uploadStatus)
-            = createMultipartUpload(filePart, fileName)
-
-
-        return Mono.fromFuture(s3AsyncClientMultipartUpload).flatMapMany { response ->
-            FileUtils.checkSdkResponse(response)
-            uploadStatus.uploadId = response.uploadId()
-            logger.info("Upload object with ID={}", response.uploadId())
-            filePart.content()
-        }.bufferUntil { dataBuffer ->
-            // Collect incoming values into multiple List buffers that will be emitted by the resulting Flux each time the given predicate returns true.
-            uploadStatus.addBuffered(dataBuffer.readableByteCount())
-            if (uploadStatus.buffered >= 5242880) { // 5mb TODO config
-                logger.info(
-                    "BufferUntil - returning true, bufferedBytes={}, partCounter={}, uploadId={}",
-                    uploadStatus.buffered, uploadStatus.partCounter, uploadStatus.uploadId
-                )
-
-                // reset buffer
-                uploadStatus.buffered = 0
-                return@bufferUntil true
-            }
-            false
-        }.map { FileUtils.dataBufferToByteBuffer(it) } // upload part
             .flatMap { byteBuffer -> uploadPartObject(uploadStatus, byteBuffer) }
             .onBackpressureBuffer(5242880, BufferOverflowStrategy.DROP_OLDEST)
             .reduce(uploadStatus) { status, completedPart ->
