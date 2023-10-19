@@ -10,6 +10,4 @@ data class User(
     val isActive: Boolean,
     val claims: Set<String> = emptySet(),
     val ips: Set<String> = emptySet(),
-    val accessToken: String? = null,
-    val refreshToken: String? = null,
 )

@@ -8,8 +8,6 @@ create table if not exists s3_replication.user
     isActive     boolean,
     claims       set<text>,
     ips          set<text>,
-    accessToken  text,
-    refreshToken text,
 );
 
 create custom index if not exists user_login_custom_index on s3_replication.user (login) using 'org.apache.cassandra.index.sasi.SASIIndex';
