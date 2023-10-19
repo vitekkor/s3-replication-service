@@ -15,7 +15,22 @@ spring:
 
 jwt:
   secretKey: ecf1222c-88fd-47f3-988f-bdd78bade1ad
-  validityInMs: 3600000
+  validityInMs: 3600000 # 1 hour
+  refreshValidityInMs: 2592000000 # 30 days
+s3:
+  replicationJobDelay: 60_000 # ms
+  threads: 10
+  buckets:
+    - host: https://storage.yandexcloud.net
+      bucket: ""
+      accessKey: ""
+      secretKey: ""
+      region: ru-central1
+    - host: https://storage.yandexcloud.net
+      bucket: ""
+      accessKey: ""
+      secretKey: ""
+      region: ru-central1
 
 
 
@@ -30,3 +45,5 @@ logging:
       max-history: 28
   file:
     name: ${log.dir:./}/s3-replication-server.main.log
+  level:
+    web: debug

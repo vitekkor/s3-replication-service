@@ -1,5 +1,6 @@
 package com.vitekkor.s3replicationservice.security
 
+import org.springframework.context.annotation.Lazy
 import org.springframework.http.HttpHeaders
 import org.springframework.http.server.reactive.ServerHttpRequest
 import org.springframework.security.core.context.ReactiveSecurityContextHolder
@@ -12,7 +13,7 @@ import reactor.core.scheduler.Schedulers
 
 
 @Component
-class JwtTokenAuthenticationFilter(private val tokenProvider: JwtTokenProvider) : WebFilter {
+class JwtTokenAuthenticationFilter(@Lazy private val tokenProvider: JwtTokenProvider) : WebFilter {
     override fun filter(exchange: ServerWebExchange, chain: WebFilterChain): Mono<Void> {
         val token = resolveToken(exchange.request)
         return if (!token.isNullOrBlank() && tokenProvider.validateToken(token)) {

@@ -7,7 +7,7 @@ data class OperationResult(
     val fileName: String,
     val result: Result,
 ) {
-    val otherResults = mutableListOf<OperationResult>()
+    val otherResults: MutableList<OperationResult> = mutableListOf()
     val isSuccessful
         get() = result == Result.SUCCESSFUL
 

@@ -6,7 +6,10 @@ data class User(
     @Id
     val login: String,
     val password: String,
-    val roles: List<String> = emptyList(),
+    val roles: Set<String> = emptySet(),
     val isActive: Boolean,
-    val claims: List<String> = emptyList(),
+    val claims: Set<String> = emptySet(),
+    val ips: Set<String> = emptySet(),
+    val accessToken: String? = null,
+    val refreshToken: String? = null,
 )

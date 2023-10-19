@@ -2,6 +2,7 @@ package com.vitekkor.s3replicationservice.util
 
 import mu.KotlinLogging
 import org.springframework.core.io.buffer.DataBuffer
+import org.springframework.core.io.buffer.DataBufferUtils
 import software.amazon.awssdk.core.SdkResponse
 import java.nio.ByteBuffer
 import kotlin.jvm.optionals.getOrNull
@@ -17,7 +18,10 @@ object FileUtils {
             partSize += b.readableByteCount()
         }
         val partData: ByteBuffer = ByteBuffer.allocate(partSize)
-        buffers.forEach { buffer -> partData.put(buffer.toByteBuffer()) }
+        buffers.forEach { buffer ->
+            partData.put(buffer.toByteBuffer())
+            DataBufferUtils.release(buffer)
+        }
 
         // Reset read pointer to first byte
         partData.rewind()

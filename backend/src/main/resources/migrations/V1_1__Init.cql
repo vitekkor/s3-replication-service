@@ -2,12 +2,17 @@ create keyspace "s3_replication" with replication = {'class' : 'SimpleStrategy',
 
 create table if not exists s3_replication.user
 (
-    login    text primary key,
-    password text,
-    roles    set<text>,
-    isActive boolean,
-    claims   set<text>,
+    login        text primary key,
+    password     text,
+    roles        set<text>,
+    isActive     boolean,
+    claims       set<text>,
+    ips          set<text>,
+    accessToken  text,
+    refreshToken text,
 );
+
+create custom index if not exists user_login_custom_index on s3_replication.user (login) using 'org.apache.cassandra.index.sasi.SASIIndex';
 
 create table if not exists s3_replication.request_log
 (

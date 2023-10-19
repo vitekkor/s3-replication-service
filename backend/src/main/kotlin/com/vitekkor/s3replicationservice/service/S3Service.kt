@@ -45,17 +45,18 @@ class S3Service(
                     timestamp = timestamp
                 )
                 requestLogRepository.save(requestLog).thenReturn(it)
-            }.onErrorResume {
-                logger.warn { "Uploading file $fileName to $s3Client was failed" }
-                val requestError = RequestError(
-                    method = RequestMethod.PUT,
-                    fileName = fileName,
-                    fileProperties = mapOf(CONTENT_TYPE_PROPERTY to filePart.contentType.toString()),
-                    s3StorageName = s3Client.name,
-                    timestamp = timestamp
-                )
-                requestErrorRepository.save(requestError).map { OperationResult(fileName, Result.FAILED) }
             }.map { OperationResult(fileName, Result.SUCCESSFUL) }
+                .onErrorResume {
+                    logger.warn { "Uploading file $fileName to $s3Client was failed" }
+                    val requestError = RequestError(
+                        method = RequestMethod.PUT,
+                        fileName = fileName,
+                        fileProperties = mapOf(CONTENT_TYPE_PROPERTY to filePart.contentType.toString()),
+                        s3StorageName = s3Client.name,
+                        timestamp = timestamp
+                    )
+                    requestErrorRepository.save(requestError).map { OperationResult(fileName, Result.FAILED) }
+                }
         }.toFlux().flatMap { it }
     }
 
@@ -86,7 +87,17 @@ class S3Service(
         return findActualLog(fileName)?.let { actualLog ->
             val client = s3Clients.find { it.name == actualLog.s3StorageName }
             client?.getByteBufferFluxObject(fileName)
-        } ?: throw NoSuchKeyException.create("File $fileName not found", null)
+        } ?: throw NoSuchKeyException.builder().message("File $fileName not found").build()
+    }
+
+    fun getFileStatuses(): List<RequestLog> {
+        return checkNotNull(requestLogRepository.findAll().collectList().block())
+            .sortedByDescending { it.timestamp }
+            .distinctBy { it.fileName + it.method + it.s3StorageName }
+            .groupBy { it.fileName + it.s3StorageName }
+            .mapNotNull { (_, value) ->
+                value.sortedByDescending { it.timestamp }.singleOrNull()
+            }
     }
 
     @Scheduled(fixedDelayString = "\${s3.replicationJobDelay}")
