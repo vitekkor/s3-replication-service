@@ -4,12 +4,10 @@ import com.vitekkor.s3replicationservice.model.OperationResult
 import com.vitekkor.s3replicationservice.model.Result
 import com.vitekkor.s3replicationservice.model.Status
 import com.vitekkor.s3replicationservice.model.Status.FileStatus.Companion.getByRequestMethod
-import com.vitekkor.s3replicationservice.repository.RequestLogRepository
 import com.vitekkor.s3replicationservice.service.ReplicableS3Client
 import com.vitekkor.s3replicationservice.service.S3Service
 import com.vitekkor.s3replicationservice.util.FileUtils
 import kotlinx.serialization.Serializable
-import mu.KotlinLogging.logger
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -34,19 +32,14 @@ import java.nio.ByteBuffer
 import java.time.Instant
 import java.util.Date
 import java.util.UUID
-import java.util.concurrent.CompletableFuture
-import java.util.function.Function
 
 
 @RestController
 @RequestMapping("/api")
 class S3Controller(
     private val s3Service: S3Service,
-    private val requestLogRepository: RequestLogRepository,
     private val s3Clients: List<ReplicableS3Client>,
 ) {
-
-    private val logger = logger {}
 
     @PostMapping("/upsert/{fileName}")
     fun uploadFile(
@@ -119,7 +112,7 @@ class S3Controller(
                 AsyncRequestBody.fromPublisher(body)
             )
         return Mono.fromFuture(future)
-            .map{ response ->
+            .map { response ->
                 FileUtils.checkSdkResponse(response)
                 ResponseEntity
                     .status(HttpStatus.CREATED)

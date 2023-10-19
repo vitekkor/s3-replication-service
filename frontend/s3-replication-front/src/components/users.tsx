@@ -5,9 +5,23 @@ import userService from "../service/user.service"
 import User from "../model/user";
 import CreatableSelect from "react-select/creatable";
 
+const getNewUser = () => {
+    return new class implements User {
+        files = [];
+        ips = [];
+        isActive = true;
+        login = "";
+        password = "";
+        roles = [];
+        scopes = [];
+    }()
+}
+
 // @ts-ignore
-const Modal = ({onRequestClose, user}) => {
+const Modal = ({onRequestClose, user, createNew}) => {
     const [message, setMessage] = useState<string>("");
+    const [newLogin, setNewLogin] = useState<string>("");
+    const [newPassword, setNewPassword] = useState<string>("");
 
     const allowedScopes = [
         {value: "read", label: "READ"},
@@ -87,19 +101,48 @@ const Modal = ({onRequestClose, user}) => {
             ips = ips.map(ip => ip.value);
             isActive = status.value;
             login = user.login;
-            password = null;
+            password = (createNew === true) ? newPassword : null;
             roles = roles.map(role => role.value);
             scopes = scopes.map(scope => scope.value);
         }()
-        userService.save(newUser).then(r => {
-                onRequestClose(newUser)
-            },
-            (error) => {
-                const resMessage = error?.response?.data?.error || error.message || error.toString();
+        if (!createNew) {
+            userService.save(newUser).then(r => {
+                    onRequestClose(newUser)
+                },
+                (error) => {
+                    const resMessage = error?.response?.data?.error || error.message || error.toString();
 
-                setMessage(resMessage);
-            })
+                    setMessage(resMessage);
+                })
+        } else {
+            userService.create(newUser).then(r => {
+                    onRequestClose(newUser)
+                },
+                (error) => {
+                    const resMessage = error?.response?.data?.error || error.message || error.toString();
+
+                    setMessage(resMessage);
+                })
+        }
     }
+
+    const onChangeLogin = (e: ChangeEvent<HTMLInputElement>) => {
+        const newLoginValue = e.target.value;
+        if (newLoginValue === '') {
+            alert("Must be not null");
+            return;
+        }
+        setNewLogin(newLoginValue);
+    };
+
+    const onChangePassword = (e: ChangeEvent<HTMLInputElement>) => {
+        const newLoginValue = e.target.value;
+        if (newLoginValue === '') {
+            alert("Must be not null");
+            return;
+        }
+        setNewPassword(newLoginValue);
+    };
 
     return (
         <div className="modal__backdrop">
@@ -111,7 +154,33 @@ const Modal = ({onRequestClose, user}) => {
                         <label>
                             <strong>Login:</strong>
                         </label>{" "}
-                        {user.login}
+                        {createNew === true ? (
+                            <div className="input-group mb-3">
+                                <input
+                                    type="text"
+                                    className="form-control"
+                                    placeholder="Login"
+                                    value={newLogin}
+                                    onChange={onChangeLogin}
+                                />
+                            </div>
+                        ) : (user.login)}
+                    </div>
+                    <div>
+                        <label>
+                            <strong>Password:</strong>
+                        </label>{" "}
+                        {createNew === true ? (
+                            <div className="input-group mb-3">
+                                <input
+                                    type="text"
+                                    className="form-control"
+                                    placeholder="Password"
+                                    value={newPassword}
+                                    onChange={onChangePassword}
+                                />
+                            </div>
+                        ) : ("***")}
                     </div>
                     <div>
                         <label>
@@ -205,6 +274,7 @@ const BoardUser: React.FC = () => {
     const [currentIndex, setCurrentIndex] = useState<number>(-1);
     const [searchLogin, setSearchLogin] = useState<string>("");
     const [isModalOpen, setModalIsOpen] = useState(false);
+    const [isCreateUserModalOpen, setCreateUserModalOpen] = useState(false);
 
     const setActiveUser = (user: User, index: number) => {
         if (currentUser === user) {
@@ -262,6 +332,10 @@ const BoardUser: React.FC = () => {
         setModalIsOpen(!isModalOpen);
     };
 
+    const addUser = () => {
+        setCreateUserModalOpen(!isCreateUserModalOpen);
+    };
+
     const onCloseModal = (newUser: User) => {
         setCurrentUser(newUser);
         allUsers[currentIndex] = newUser;
@@ -270,7 +344,8 @@ const BoardUser: React.FC = () => {
 
     return (
         <div className="list row">
-            {isModalOpen && <Modal onRequestClose={onCloseModal} user={currentUser}/>}
+            {isModalOpen && <Modal onRequestClose={onCloseModal} user={currentUser} createNew={false}/>}
+            {isCreateUserModalOpen && <Modal onRequestClose={onCloseModal} user={getNewUser()} createNew={true}/>}
             <div className="col-md-8">
                 <div className="input-group mb-3">
                     <input
@@ -292,7 +367,13 @@ const BoardUser: React.FC = () => {
                 </div>
             </div>
             <div className="col-md-6">
-                <h4>Users</h4>
+                <div className="row-cols-md-auto">
+                    <h4>Users</h4>
+                    <br/>
+                    <button onClick={addUser} type="button">
+                        Add
+                    </button>
+                </div>
                 <ul className="list-group">
                     {Array.from(content).map((user, index) => (
                         <li
