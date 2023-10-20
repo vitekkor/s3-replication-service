@@ -1,0 +1,45 @@
+server:
+  port: 8000
+  shutdown: GRACEFUL
+
+spring:
+  application:
+    name: s3-replication-server
+  cassandra:
+    contact-points: "localhost:9042"
+    keyspace-name: s3_replication
+    password: "cassandra"
+    username: "cassandra"
+    schema-action: none
+    local-datacenter: datacenter1
+
+jwt:
+  secretKey: ecf1222c-88fd-47f3-988f-bdd78bade1ad
+  validityInMs: 3600000
+s3:
+  threads: 10
+  buckets:
+    - host: http://localhost:9000
+      bucket: s3-replica-1
+      accessKey: test
+      secretKey: test_test
+      region: us-west-rack-2
+    - host: http://localhost:9000
+      bucket: s3-replica-2
+      accessKey: test
+      secretKey: test_test
+      region: us-west-rack-2
+
+
+
+logging:
+  pattern:
+    console: "%d - %t - %5p [%8c] - %m %n"
+    file: "%d - %t - %5p [%8c] - %m %n"
+  logback:
+    rollingpolicy:
+      max-file-size: 100MB
+      file-name-pattern: ${log.dir:./}/s3-replication-server.main.%d.%i.log.gz
+      max-history: 28
+  file:
+    name: ${log.dir:./}/s3-replication-server.main.log

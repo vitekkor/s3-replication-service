@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
+import reactor.core.scheduler.Schedulers
 import java.nio.ByteBuffer
 import java.time.Instant
 import java.util.Date
@@ -70,7 +71,7 @@ class S3Controller(
         val contentType = (headers.contentType ?: MediaType.APPLICATION_OCTET_STREAM).toString()
         val timestamp = Date.from(Instant.now())
         val upsertResult = OperationResult(fileName, Result.SUCCESSFUL)
-        val sharedBody = body.share()
+        val sharedBody = body.share().subscribeOn(Schedulers.parallel())
         return s3Service.newUpsert(sharedBody, fileName, contentType, length, timestamp).reduce(upsertResult) { t, u ->
             t.otherResults += u
             t

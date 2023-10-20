@@ -52,6 +52,8 @@ const Login: React.FC<Props> = () => {
     useEffect(() => {
         authService.haveUser().then(r => {
             if (r.data) navigate('/')
+        }, (error) => {
+            navigate('/login')
         })
     }, [navigate]);
 

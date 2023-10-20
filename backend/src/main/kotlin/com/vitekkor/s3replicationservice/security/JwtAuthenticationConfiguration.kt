@@ -57,10 +57,9 @@ class JwtAuthenticationConfiguration(
                 }
                 val requestPath = context.exchange.request.path.toString()
                 val matchesByExtension = if (requestPath.apiPathShouldBeFilteredByExt()) {
-                    context.exchange.request.headers.contentLength < 4294967296 && // 4gb TODO config
-                        a.authorities.filter(GrantedAuthority::isExtensionAuthority).map {
-                            ExtensionMatcher(it.authority.removePrefix("FILE_EXT_"))
-                        }.any { it.matches(requestPath) }
+                    a.authorities.filter(GrantedAuthority::isExtensionAuthority).map {
+                        ExtensionMatcher(it.authority.removePrefix("FILE_EXT_"))
+                    }.any { it.matches(requestPath) }
                 } else {
                     true
                 }
@@ -116,11 +115,11 @@ class JwtAuthenticationConfiguration(
             .authorizeExchange { exchanges ->
                 exchanges.pathMatchers("/version", "/healthCheck", "/actuator/prometheus", "/auth/**").permitAll()
                     .pathMatchers("/user/**").hasRole("ADMIN")
-                    .pathMatchers("/**").access(::checkIp)
                     .pathMatchers(HttpMethod.GET).hasAuthority("SCOPE_read")
                     .pathMatchers(HttpMethod.DELETE).hasAuthority("SCOPE_write")
                     .pathMatchers(HttpMethod.POST).hasAuthority("SCOPE_write")
                     .pathMatchers(HttpMethod.PUT).hasAuthority("SCOPE_write")
+                    .pathMatchers("/**").access(::checkIp)
                     .anyExchange().authenticated()
             }.addFilterAt(jwtTokenAuthenticationFilter, SecurityWebFiltersOrder.HTTP_BASIC)
         return http.build()

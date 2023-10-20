@@ -1,10 +1,14 @@
 package com.vitekkor.s3replicationservice.util
 
 import com.vitekkor.s3replicationservice.model.UserDto
+import com.vitekkor.s3replicationservice.model.db.ReplicationSettings
 import com.vitekkor.s3replicationservice.model.db.User
+import com.vitekkor.s3replicationservice.repository.ReplicationSettingsRepository
 import org.springframework.http.MediaType
 import org.springframework.http.codec.multipart.FilePart
 import org.springframework.security.core.GrantedAuthority
+import reactor.core.publisher.Mono
+import reactor.kotlin.core.publisher.switchIfEmpty
 
 val FilePart.contentType
     get() = headers().contentType ?: MediaType.APPLICATION_OCTET_STREAM
@@ -35,11 +39,23 @@ fun UserDto.toUser(password: String): User {
         password = password,
         roles = roles,
         isActive = isActive,
-        claims = (scopes.asSequence().map { scope -> "SCOPE_$scope" } + files.asSequence().map { file -> "FILE_EXT_$file" }).toSet(),
+        claims = (scopes.asSequence().map { scope -> "SCOPE_$scope" } + files.asSequence()
+            .map { file -> "FILE_EXT_$file" }).toSet(),
         ips = ips
     )
 }
 
 fun String.apiPathShouldBeFilteredByExt(): Boolean {
-    return matches("""/api/(upsert|get|delete)""".toRegex())
+    return matches("""/api/((upsert)|(get)|(delete))/.*""".toRegex())
+}
+
+fun Mono<ReplicationSettings>.orDefault(replicationSettingsRepository: ReplicationSettingsRepository): Mono<ReplicationSettings> {
+    return switchIfEmpty {
+        replicationSettingsRepository.save(
+            ReplicationSettings(
+                enabled = true,
+                status = ReplicationSettings.ReplicationStatus.ACTIVE
+            )
+        )
+    }
 }

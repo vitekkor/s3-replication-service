@@ -13,7 +13,8 @@ class AuthService {
     }
 
     logout() {
-        return instance.post("auth/logout")
+        localStorage.removeItem("token");
+        localStorage.removeItem("refreshToken");
     }
 
     setAuthToken(authResponse: AxiosResponse<AuthResponse>) {

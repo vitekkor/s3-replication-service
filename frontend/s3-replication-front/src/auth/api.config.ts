@@ -22,7 +22,7 @@ instance.interceptors.response.use(
         const originalRequest = {...error.config};
         originalRequest._isRetry = true;
         if (
-            error.response.status === 401 &&
+            error.response?.status === 401 &&
             error.config &&
             !error.config._isRetry
         ) {

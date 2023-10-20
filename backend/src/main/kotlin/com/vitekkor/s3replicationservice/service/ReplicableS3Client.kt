@@ -1,5 +1,6 @@
 package com.vitekkor.s3replicationservice.service
 
+import com.vitekkor.s3replicationservice.exceptions.handling.InvalidLength
 import com.vitekkor.s3replicationservice.model.OperationResult
 import com.vitekkor.s3replicationservice.model.Result
 import com.vitekkor.s3replicationservice.model.UploadStatus
@@ -55,8 +56,10 @@ class ReplicableS3Client(
     }
 
 
-    fun getByteBufferFluxObject(key: String): Flux<ByteBuffer> {
-        return Mono.just(GetObjectRequest.builder().bucket(bucket).key(key).build()).map {
+    fun getByteBufferFluxObject(key: String, contentType: String?): Flux<ByteBuffer> {
+        val getObjectRequestBuilder = GetObjectRequest.builder().bucket(bucket).key(key)
+        contentType?.let { getObjectRequestBuilder.responseContentType(it) }
+        return Mono.just(getObjectRequestBuilder.build()).map {
             s3AsyncClient.getObject(it, AsyncResponseTransformer.toPublisher())
         }.flatMap { Mono.fromFuture(it) }.flatMapMany { Flux.from(it) }
     }
@@ -81,10 +84,16 @@ class ReplicableS3Client(
             )
         ).map { response ->
             FileUtils.checkSdkResponse(response)
+            val contentLength = s3AsyncClient.headObject {
+                it.bucket(bucket).key(fileName).build()
+            }.join().contentLength()
+            if (contentLength != length) {
+                throw InvalidLength(length, contentLength)
+            }
             logger.info("upload result: {}", response.toString())
             OperationResult(fileName, Result.SUCCESSFUL)
         }.onErrorResume {
-            logger.warn { "Uploading file $fileName to $name was failed" }
+            logger.warn(it) { "Uploading file $fileName to $name was failed" }
             OperationResult(fileName, Result.FAILED).toMono()
         }
     }
@@ -109,7 +118,7 @@ class ReplicableS3Client(
         }.bufferUntil { byteBuffer ->
             // Collect incoming values into multiple List buffers that will be emitted by the resulting Flux each time the given predicate returns true.
             uploadStatus.addBuffered(byteBuffer.remaining())
-            if (uploadStatus.buffered >= 5242880) { // 5mb TODO config
+            if (uploadStatus.buffered >= 5242880) {
                 logger.info(
                     "BufferUntil - returning true, bufferedBytes={}, partCounter={}, uploadId={}",
                     uploadStatus.buffered, uploadStatus.partCounter, uploadStatus.uploadId
@@ -127,7 +136,7 @@ class ReplicableS3Client(
                 logger.info("Completed: PartNumber={}, etag={}", completedPart.partNumber(), completedPart.eTag())
                 status.completedParts[completedPart.partNumber()] = completedPart
                 status
-            }.flatMap { uploadStatus1 -> completeMultipartUpload(uploadStatus) }.map { response ->
+            }.flatMap { completeMultipartUpload(it) }.map { response ->
                 FileUtils.checkSdkResponse(response)
                 logger.info("upload result: {}", response.toString())
             }
